@@ -62,7 +62,9 @@ class FacLogHandler(PatternMatchingEventHandler):
             if m is None:
                 continue
             dispatch = {
-                "CHAT": self.got_chat
+                "CHAT": self.got_chat,
+                "JOIN": self.got_join,
+                "LEAVE": self.got_leave,
                 }
 
             method = dispatch.get(m.group(1), None)
@@ -88,6 +90,28 @@ class FacLogHandler(PatternMatchingEventHandler):
         coro = channel.send(text)
         asyncio.run_coroutine_threadsafe(coro, self.fbot.loop)
 
+    def got_join(self, text):
+        logger.debug("Factorio sent JOIN '%s'", text)
+        user, nothing = text.split(" joi", 1)
+        if user == "<server>":
+            return
+
+        text = ":arrow_up: " + user + " joined the game"
+        channel = self.fbot.get_channel(self.fbot.bridge_id)
+        coro = channel.send(text)
+        asyncio.run_coroutine_threadsafe(coro, self.fbot.loop)
+
+    def got_leave(self, text):
+        logger.debug("Factorio sent LEAVE '%s'", text)
+        user, nothing = text.split(" left", 1)
+        if user == "<server>":
+            return
+
+        text = ":arrow_down: " + user + " left the game"
+        channel = self.fbot.get_channel(self.fbot.bridge_id)
+        coro = channel.send(text)
+        asyncio.run_coroutine_threadsafe(coro, self.fbot.loop)
+        
 class FacBot(commands.Bot):
     # Interacts with discord
     def __init__(self, bridge_id, data_dir, host):
@@ -97,8 +121,7 @@ class FacBot(commands.Bot):
         self.host = host
         with open(data_dir + "/config/rconpw", "r") as f:
             self.pw = f.readline().strip()
-        self.log_in = FacLogHandler(self, data_dir + "/factorio-current.log")
-
+        self.log_in = FacLogHandler(self, data_dir + "/factorio-console.log")
 
     async def on_message(self, message):
         if message.author.bot:
