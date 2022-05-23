@@ -9,6 +9,7 @@ This basically works by (1) scraping Factorio's log file and sending chat messag
 | `DISCORD_KEY`            | n/a       | API key for the discord bot                                                                 |
 | `CHANNEL_ID`             | n/a       | Channel ID for the bot to relay messages to. The bot will accept commands from any channel. |
 
-Requires factorio data directory mapped at a location specified by the `FACTORIO_DATA_DIR_PATH` env variable and the `--console-log $FACTORIO_DATA_DIR_PATH/factorio-current.log` option on the host at `FACTORIO_HOST`.
+Requires factorio data directory mapped at a location specified by the `FACTORIO_DATA_DIR_PATH` env variable and the `--console-log $FACTORIO_DATA_DIR_PATH/factorio-console.log` option on the host at `FACTORIO_HOST`.
+WARNING!! factorio-current.log does not output the chat in all cases, therefor please create the factorio-console.log.
 
 Also needs a `DISCORD_KEY` and `CHANNEL_ID`. To, you know, talk to discord.
