@@ -14,7 +14,7 @@ from discord.ext import commands
 from mcrcon import MCRcon
 
 logger = logging.getLogger('discord')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 class FacLogHandler(PatternMatchingEventHandler):
     # Watches a log file for useful events
@@ -28,6 +28,7 @@ class FacLogHandler(PatternMatchingEventHandler):
         self.observer = Observer()
         self.observer.schedule(self, dirname(self.log_loc), recursive=False)
         self.observer.start()
+        print("started")
 
     def spin_up(self):
         # When the bridge first starts up, wait for factorio to start and
@@ -41,6 +42,7 @@ class FacLogHandler(PatternMatchingEventHandler):
                 self.logfile = open(self.log_loc, 'r')
             except:
                 time.sleep(1)
+                elapsed + 1
                 if elapsed > 20:
                     raise Exception("Timed out opening log file!")
 
@@ -58,21 +60,28 @@ class FacLogHandler(PatternMatchingEventHandler):
         # When a line is written to the log, handle any action needed.
         # Right now, there's only chat.
         for line in self.logfile:
-            m = re.match("^[-0-9: ]+\[([A-Z]+)\] (.+)$", line)
-            if m is None:
-                continue
-            dispatch = {
-                "CHAT": self.got_chat,
-                "JOIN": self.got_join,
-                "LEAVE": self.got_leave,
-                }
+            m = re.match(".*Factorio-Event-Logger+.*\[([A-Z\ ]+)\] (.+)$", line)
 
-            method = dispatch.get(m.group(1), None)
+            if m is not None:
+                
+                dispatch = {
+                    "JOIN": self.got_join,
+                    "LEAVE": self.got_leave,
+                    "CHAT": self.got_chat,
+                    "DIED": self.got_died,
+                    "EVOLUTION": self.got_evolution,
+                    "RESEARCH STARTED": self.got_research_started,
+                    "RESEARCH FINISHED": self.got_research_finished,
+                    "RESEARCH CANCELLED": self.got_research_cancelled,
+                    }
 
-            if method is not None:
-                method(m.group(2))
-            else:
-                self.default_handler(m.group(1), m.group(2))
+                method = dispatch.get(m.group(1), None)
+
+                if method is not None:
+                    print("Match found in Mod Logs")
+                    method(m.group(2))
+                #else:
+                    #self.default_handler(m.group(1), m.group(2))
 
     def default_handler(self, kind, text):
         logger.debug("Factorio sent unknown '%s': '%s'", kind, text)
@@ -87,12 +96,12 @@ class FacLogHandler(PatternMatchingEventHandler):
             return
 
         channel = self.fbot.get_channel(self.fbot.bridge_id)
-        coro = channel.send(text)
+        coro = channel.send(":incoming_envelope: " + text)
         asyncio.run_coroutine_threadsafe(coro, self.fbot.loop)
 
     def got_join(self, text):
         logger.debug("Factorio sent JOIN '%s'", text)
-        user, nothing = text.split(" joi", 1)
+        user = text
         if user == "<server>":
             return
 
@@ -103,25 +112,60 @@ class FacLogHandler(PatternMatchingEventHandler):
 
     def got_leave(self, text):
         logger.debug("Factorio sent LEAVE '%s'", text)
-        user, nothing = text.split(" left", 1)
+        user, reason = text.split(" ", 1)
         if user == "<server>":
             return
 
-        text = ":arrow_down: " + user + " left the game"
+        text = ":arrow_down: " + user + " left the game with reason: " + reason
         channel = self.fbot.get_channel(self.fbot.bridge_id)
         coro = channel.send(text)
         asyncio.run_coroutine_threadsafe(coro, self.fbot.loop)
-        
+
+    def got_died(self, text):
+        logger.debug("Factorio sent DIED '%s'", text)
+        user, reason = text.split(" ", 1)
+        if user == "<server>":
+            return
+
+        text = ":coffin: " + user + " died because of " + reason
+        channel = self.fbot.get_channel(self.fbot.bridge_id)
+        coro = channel.send(text)
+        asyncio.run_coroutine_threadsafe(coro, self.fbot.loop)
+
+    def got_evolution(self, text):
+        logger.debug("Factorio sent EVOLUTION '%s'", text)
+        channel = self.fbot.get_channel(self.fbot.bridge_id)
+        coro = channel.send(":dna: Current Evolution: " + text)
+        asyncio.run_coroutine_threadsafe(coro, self.fbot.loop)
+
+    def got_research_started(self, text):
+        logger.debug("Factorio sent RESEARCH STARTED '%s'", text)
+        channel = self.fbot.get_channel(self.fbot.bridge_id)
+        coro = channel.send(":test_tube: " + text + " research started")
+        asyncio.run_coroutine_threadsafe(coro, self.fbot.loop)
+
+    def got_research_finished(self, text):
+        logger.debug("Factorio sent RESEARCH FINISHED '%s'", text)
+        channel = self.fbot.get_channel(self.fbot.bridge_id)
+        coro = channel.send(":test_tube::tada: " + text + " research finished")
+        asyncio.run_coroutine_threadsafe(coro, self.fbot.loop)
+
+    def got_research_cancelled(self, text):
+        logger.debug("Factorio sent RESEARCH CANCELLED '%s'", text)
+        channel = self.fbot.get_channel(self.fbot.bridge_id)
+        coro = channel.send(":test_tube::warning:" + text + " research cancelled")
+        asyncio.run_coroutine_threadsafe(coro, self.fbot.loop)
+
 class FacBot(commands.Bot):
     # Interacts with discord
-    def __init__(self, bridge_id, data_dir, host):
+    def __init__(self, bridge_id, data_dir, logfile, host):
         super().__init__(['/', ''])
         self.bridge_id = int(bridge_id)
         self.data_dir = data_dir
         self.host = host
         with open(data_dir + "/config/rconpw", "r") as f:
             self.pw = f.readline().strip()
-        self.log_in = FacLogHandler(self, data_dir + "/factorio-console.log")
+        self.log_in = FacLogHandler(self, data_dir + "/" + logfile)
 
     async def on_message(self, message):
         if message.author.bot:
@@ -136,7 +180,7 @@ class FacBot(commands.Bot):
             return await self.send_to_factorio(ctx)
 
     async def send_to_factorio(self, ctx):
-        msg = "{}: {}".format(ctx.author.display_name, ctx.message.content)
+        msg = "Discord:{}: {}".format(ctx.author.display_name, ctx.message.content)
         logger.debug("Msg from discord: \"{}\"".format(msg))
         with MCRcon(self.host, self.pw, 27015) as rcon:
             resp = rcon.command(msg)
@@ -149,7 +193,6 @@ if __name__ == "__main__":
     logger.info("Starting discord/factorio bridge....")
     fb = FacBot(os.environ['CHANNEL_ID'],
                 os.environ["FACTORIO_DATA_DIR_PATH"],
-                os.environ.get("FACTORIO_HOST", '127.0.0.1'))
+                os.getenv("FACTORIO_LOGFILE", 'factorio-current.log'),
+                os.getenv("FACTORIO_HOST", '127.0.0.1'))
     fb.run(os.environ["DISCORD_KEY"])
-
-
